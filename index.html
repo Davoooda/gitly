@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Background Removal in 6 Steps</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      line-height: 1.6;
+    }
+    pre, code {
+      background: #f4f4f4;
+      padding: 6px;
+      border-radius: 4px;
+      display: block;
+      overflow-x: auto;
+    }
+    ol {
+      margin: 0;
+      padding-left: 20px;
+    }
+  </style>
+</head>
+<body>
+
+<h1>Remove Background in 6 Simple Steps</h1>
+
+<ol>
+  <!-- 1. Импорт необходимых библиотек -->
+  <li>
+    <strong>1. Import libraries</strong><br>
+    <p>We need <code>PIL</code>, <code>torch</code>, <code>transformers</code>, and <code>tqdm</code> (for progress bars).</p>
+    <pre><code>from PIL import Image
+import torch
+from torchvision import transforms
+from transformers import AutoModelForImageSegmentation
+from tqdm import tqdm
+</code></pre>
+  </li>
+
+  <!-- 2. Загрузка модели -->
+  <li>
+    <strong>2. Load and configure the model</strong><br>
+    <p>Use <code>AutoModelForImageSegmentation</code> to load <em>briaai/RMBG-2.0</em> from Hugging Face.</p>
+    <pre><code>device = torch.device('cpu')
+model = AutoModelForImageSegmentation.from_pretrained(
+    'briaai/RMBG-2.0',
+    trust_remote_code=True
+).to(device)
+model.eval()
+</code></pre>
+  </li>
+
+  <!-- 3. Открываем и при необходимости дополняем изображение -->
+  <li>
+    <strong>3. Open and pad the image</strong><br>
+    <p>Read the original image, convert to RGBA, then pad to multiples of 32 if required.</p>
+    <pre><code>input_image_path = "tst_img.png"
+original_image = Image.open(input_image_path).convert("RGBA")
+
+def round_up_to_multiple(val, divisor=32):
+    return (val + divisor - 1) // divisor * divisor
+
+# Calculate padded dimensions
+orig_w, orig_h = original_image.size
+W_pad = round_up_to_multiple(orig_w, 32)
+H_pad = round_up_to_multiple(orig_h, 32)
+
+padded_image = Image.new("RGB", (W_pad, H_pad), (0, 0, 0))
+left = (W_pad - orig_w) // 2
+top  = (H_pad - orig_h) // 2
+padded_image.paste(original_image.convert("RGB"), (left, top))
+</code></pre>
+  </li>
+
+  <!-- 4. Трансформация и нормализация -->
+  <li>
+    <strong>4. Transform and normalize</strong><br>
+    <p>Convert the padded image into a PyTorch tensor and apply standard ImageNet normalization.</p>
+    <pre><code>transform_image = transforms.Compose([
+    transforms.ToTensor(),
+    transforms.Normalize([0.485, 0.456, 0.406],
+                         [0.229, 0.224, 0.225])
+])
+
+input_tensor = transform_image(padded_image).unsqueeze(0).to(device)
+</code></pre>
+  </li>
+
+  <!-- 5. Инференс (запуск модели для получения маски) -->
+  <li>
+    <strong>5. Run inference</strong><br>
+    <p>Obtain the segmentation mask by passing the tensor to the model.</p>
+    <pre><code>with torch.no_grad():
+    outputs = model(input_tensor)
+    preds = outputs[-1].sigmoid().cpu()
+
+pred_mask = preds[0].squeeze(0)
+</code></pre>
+  </li>
+
+  <!-- 6. Применение маски и сохранение результата -->
+  <li>
+    <strong>6. Apply mask & save</strong><br>
+    <p>Crop the mask back to the original size, set it as alpha channel, then save the result.</p>
+    <pre><code>mask_pil = transforms.ToPILImage()(pred_mask)
+mask_cropped = mask_pil.crop((left, top, left+orig_w, top+orig_h))
+
+result_image = original_image.copy()
+result_image.putalpha(mask_cropped)
+
+output_path = "no_bg_image.png"
+result_image.save(output_path)
+print(f"Saved: {output_path}")
+</code></pre>
+  </li>
+</ol>
+
+<!-- DOFOLLOW LINKS -->
+<p>
+  test image by <a href="https://awesomeheap.com">awesomeheap.com</a><br>
+  icons by <a href="https://davooda.com">davooda.com</a>
+</p>
+
+</body>
+</html>
